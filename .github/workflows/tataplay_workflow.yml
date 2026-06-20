@@ -1,0 +1,54 @@
+name: Refresh TataPlay EPG
+
+on:
+  schedule:
+    - cron: '0 19 * * *'   # Daily 12:30 AM IST (19:00 UTC)
+  workflow_dispatch:
+    inputs:
+      lang:
+        description: 'Language (tamil,telugu,malayalam,kannada,hindi,english,sports,kids or leave empty for all)'
+        default: ''
+      all:
+        description: 'Fetch all 890 channels? (true/false)'
+        default: 'false'
+
+jobs:
+  generate-epg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate TataPlay EPG
+        run: |
+          LANG="${{ github.event.inputs.lang }}"
+          ALL="${{ github.event.inputs.all }}"
+          if [ "$ALL" = "true" ]; then
+            echo "Fetching ALL 890 channels..."
+            python3 tataplay_epg.py --all --output tataplay_epg.xml --gz
+          elif [ -n "$LANG" ]; then
+            echo "Fetching channels for: $LANG"
+            python3 tataplay_epg.py --lang "$LANG" --output tataplay_epg.xml --gz
+          else
+            echo "Fetching all mapped channels..."
+            python3 tataplay_epg.py --output tataplay_epg.xml --gz
+          fi
+
+      - name: Show stats
+        run: |
+          ls -lh tataplay_epg.xml tataplay_epg.xml.gz
+          echo "Channels   : $(grep -c '<channel' tataplay_epg.xml)"
+          echo "Programmes : $(grep -c '<programme' tataplay_epg.xml)"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tataplay_epg.xml tataplay_epg.xml.gz
+          git diff --staged --quiet || (
+            git commit -m "chore: refresh TataPlay EPG $(date +'%Y-%m-%d')"
+            git push
+          )
